@@ -20,9 +20,14 @@ Vietnamese translation below / Hướng dẫn tiếng Việt ở bên dưới.
 ## 🚀 Installation & Setup
 
 ### 1. Add to Lively Wallpaper
-1. Download the latest **`SpotifyLyricsWallpaper.lively`** package.
+> [!IMPORTANT]
+> **Do NOT copy-paste the GitHub repository URL** into Lively Wallpaper's "Add Wallpaper" box. GitHub wraps repository ZIP files in a parent folder, which prevents Lively from finding the configuration files.
+> Instead, download the compiled `.lively` file from the **GitHub Releases** page and drag-and-drop it into Lively.
+
+1. Download the latest **`SpotifyLyricsWallpaper.lively`** package from the [GitHub Releases](https://github.com/24xNoVemBer/LivelyLyricsWallpaper/releases) page.
 2. Drag and drop the `.lively` file directly into your **Lively Wallpaper** library.
 3. Set it as your active wallpaper.
+
 
 ### 2. Enable Native Playback Controls (Play/Pause/Skip)
 To enable the media control buttons without registering Spotify developer keys, run our lightweight local helper:
@@ -48,8 +53,13 @@ Hình nền Lively hiển thị lời bài hát (Lyrics) đồng bộ thời gia
 ## 🚀 Hướng dẫn cài đặt
 
 ### 1. Cài đặt hình nền vào Lively
-1. Tải về file **`SpotifyLyricsWallpaper.lively`**.
+> [!IMPORTANT]
+> **KHÔNG dán trực tiếp link GitHub** vào ô URL của Lively Wallpaper. GitHub tự động bọc mã nguồn trong một thư mục gốc, khiến Lively không tìm thấy file cấu hình `LivelyInfo.json`.
+> Thay vào đó, hãy tải file đã đóng gói sẵn `.lively` từ trang **GitHub Releases** và kéo thả nó vào ứng dụng.
+
+1. Truy cập mục [GitHub Releases](https://github.com/24xNoVemBer/LivelyLyricsWallpaper/releases) và tải về file **`SpotifyLyricsWallpaper.lively`**.
 2. Kéo thả file này trực tiếp vào thư viện ứng dụng **Lively Wallpaper** để cài đặt.
+
 
 ### 2. Kích hoạt bộ điều khiển nhạc (Phát/Tạm dừng/Chuyển bài)
 1. Nhấp đúp chuột vào tệp **`run_helper.vbs`** để kích hoạt công cụ chạy ngầm điều khiển phím tắt hệ thống.
@@ -57,3 +67,18 @@ Hình nền Lively hiển thị lời bài hát (Lyrics) đồng bộ thời gia
    - Nhấn tổ hợp phím `Windows + R`, gõ **`shell:startup`** và nhấn **Enter**.
    - Chuột phải vào tệp `run_helper.vbs` -> chọn **Create Shortcut**.
    - Kéo tệp Shortcut vừa tạo thả vào cửa sổ thư mục Startup.
+
+---
+
+## 🛠️ Development & Packaging / Đóng gói hình nền
+
+If you modify the source files and want to package a new version:
+Nếu bạn chỉnh sửa file nguồn và muốn đóng gói lại phiên bản mới:
+
+1. Open PowerShell in the project directory.
+2. Run the packaging script:
+   ```powershell
+   ./pack.ps1
+   ```
+3. A new `SpotifyLyricsWallpaper.lively` will be generated with the correct root-level structure. Attach this file to your new GitHub Release!
+

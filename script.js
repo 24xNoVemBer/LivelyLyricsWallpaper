@@ -422,8 +422,21 @@ function renderAndSyncLyrics(lyricsText) {
   lyricsEl.innerHTML = "";
   if (containerEl) containerEl.scrollTop = 0;
 
-  if (!lyricsText || lyricsText === "No lyrics found.") {
-    lyricsEl.innerHTML = "<div class='lyric-line active' style='text-align: center;'>No lyrics found.</div>";
+  if (!lyricsText || lyricsText === "No lyrics found." || lyricsText.startsWith("No lyrics found")) {
+    lyricsEl.innerHTML = `
+      <div class='lyric-line active' style='text-align: center; display: flex; flex-direction: column; align-items: center; gap: 15px; justify-content: center; width: 100%; height: 100%; min-height: 200px;'>
+        <span style='font-size: 20px; font-weight: 600; color: var(--text-sub);'>${lyricsText || "No lyrics found."}</span>
+        <button id="btn-inline-reload" class="spotify-btn" style="font-size: 13px; padding: 8px 18px; margin-top: 5px;">Thử lại</button>
+      </div>
+    `;
+    
+    // Add event listener to the inline button
+    const inlineBtn = document.getElementById("btn-inline-reload");
+    if (inlineBtn) {
+      inlineBtn.addEventListener("click", () => {
+        reloadLyrics();
+      });
+    }
     return;
   }
 
@@ -544,7 +557,12 @@ async function fetchLyrics(title, artist) {
   
   const lyricsEl = document.getElementById("lyrics");
   const containerEl = document.getElementById("lyrics-container");
+  const btnReload = document.getElementById("btn-reload-lyrics");
   if (!lyricsEl) return;
+
+  if (btnReload) {
+    btnReload.classList.add("spinning");
+  }
 
   lyricsEl.innerHTML = "<div class='lyric-line active' style='text-align: center;'>Searching lyrics...</div>";
   if (containerEl) containerEl.scrollTop = 0;
@@ -606,6 +624,10 @@ async function fetchLyrics(title, artist) {
     // Only reset the global controller if it matches this fetch
     if (fetchController && activeFetchKey === currentTrackKey) {
       fetchController = null;
+    }
+    // Only stop spinning if this fetch corresponds to the current track
+    if (activeFetchKey === currentTrackKey && btnReload) {
+      btnReload.classList.remove("spinning");
     }
   }
 }
@@ -959,6 +981,23 @@ async function seekToTime(seconds) {
   }
 }
 
+// Reload lyrics for the current song
+function reloadLyrics() {
+  const titleEl = document.getElementById("title");
+  const artistEl = document.getElementById("artist");
+  if (!titleEl || !artistEl) return;
+
+  const title = titleEl.textContent.trim();
+  const artist = artistEl.textContent.trim();
+
+  if (!title || title === "No music playing" || !artist || artist.startsWith("Play something")) {
+    console.log("No active song playing to reload lyrics.");
+    return;
+  }
+
+  fetchLyrics(title, artist);
+}
+
 // Progress slider drag/change initializer
 window.isDraggingSlider = false;
 function initProgressSlider() {
@@ -989,6 +1028,7 @@ function initSpotifyControls() {
   const btnPrev = document.getElementById("btn-prev");
   const btnPlayPause = document.getElementById("btn-play-pause");
   const btnNext = document.getElementById("btn-next");
+  const btnReload = document.getElementById("btn-reload-lyrics");
   
   const btnCancel = document.getElementById("btn-modal-cancel");
   const btnLogin = document.getElementById("btn-modal-login");
@@ -1000,6 +1040,7 @@ function initSpotifyControls() {
   if (btnPrev) btnPrev.addEventListener("click", () => sendMediaCommand('prev'));
   if (btnPlayPause) btnPlayPause.addEventListener("click", () => sendMediaCommand('playpause'));
   if (btnNext) btnNext.addEventListener("click", () => sendMediaCommand('next'));
+  if (btnReload) btnReload.addEventListener("click", reloadLyrics);
   if (btnCancel) btnCancel.addEventListener("click", closeSpotifyConfigModal);
 
   if (btnLogin) {

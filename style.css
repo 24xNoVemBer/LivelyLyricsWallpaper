@@ -634,3 +634,17 @@ html, body {
   background: var(--accent-color);
   transform: scale(1.2);
 }
+
+/* Reload Button Spin Animation */
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.control-btn.spinning svg {
+  animation: spin 1s linear infinite;
+}
