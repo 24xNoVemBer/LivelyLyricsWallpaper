@@ -907,11 +907,21 @@ async function seekToTime(seconds) {
   const token = await getValidSpotifyToken();
   if (token) {
     try {
-      await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${Math.floor(seconds * 1000)}`, {
+      const res = await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${Math.floor(seconds * 1000)}`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      console.log(`Seeked Spotify to ${seconds}s`);
+      
+      if (res.status === 403) {
+        alert("Tính năng tua nhạc (seek) yêu cầu tài khoản Spotify Premium!");
+      } else if (res.status === 404) {
+        alert("Không tìm thấy thiết bị Spotify đang hoạt động. Hãy mở nhạc trên ứng dụng Spotify trước!");
+      } else if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        console.error("Spotify seek error:", errorData);
+      } else {
+        console.log(`Seeked Spotify to ${seconds}s`);
+      }
     } catch (e) {
       console.error("Error seeking Spotify:", e);
     }
