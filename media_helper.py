@@ -2,6 +2,8 @@ import ctypes
 import http.server
 import socketserver
 import json
+import urllib.request
+import urllib.error
 
 PORT = 18888
 
@@ -24,8 +26,8 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
         self.end_headers()
 
     def do_GET(self):
@@ -51,6 +53,78 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
             response["message"] = "Invalid endpoint"
 
         self.wfile.write(json.dumps(response).encode('utf-8'))
+
+    def do_POST(self):
+        if self.path == '/spotify-proxy':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            
+            try:
+                req_data = json.loads(post_data.decode('utf-8'))
+                target_url = req_data.get('url')
+                target_method = req_data.get('method', 'GET').upper()
+                target_headers = req_data.get('headers', {})
+                target_body = req_data.get('body', None)
+                
+                # Setup request
+                req = urllib.request.Request(
+                    url=target_url,
+                    method=target_method
+                )
+                
+                # Copy headers
+                for k, v in target_headers.items():
+                    req.add_header(k, v)
+                
+                # Make sure we encode body bytes correctly
+                data_bytes = None
+                if target_body is not None:
+                    if isinstance(target_body, str):
+                        data_bytes = target_body.encode('utf-8')
+                    else:
+                        data_bytes = json.dumps(target_body).encode('utf-8')
+                
+                # Send request
+                try:
+                    with urllib.request.urlopen(req, data=data_bytes, timeout=10) as resp:
+                        resp_data = resp.read()
+                        resp_status = resp.status
+                        resp_headers = dict(resp.getheaders())
+                except urllib.error.HTTPError as e:
+                    resp_data = e.read()
+                    resp_status = e.code
+                    resp_headers = dict(e.headers)
+                except urllib.error.URLError as e:
+                    self.send_response(500)
+                    self.send_header('Access-Control-Allow-Origin', '*')
+                    self.send_header('Content-Type', 'application/json')
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": str(e.reason)}).encode('utf-8'))
+                    return
+                
+                # Return response
+                self.send_response(resp_status)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                
+                # Forward Content-Type from Spotify if available
+                content_type = resp_headers.get('Content-Type') or resp_headers.get('content-type') or 'application/json'
+                self.send_header('Content-Type', content_type)
+                self.end_headers()
+                self.wfile.write(resp_data)
+                
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+        else:
+            self.send_response(404)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Not Found"}).encode('utf-8'))
+
 
 if __name__ == "__main__":
     # Allow address reuse to avoid port busy errors on restart

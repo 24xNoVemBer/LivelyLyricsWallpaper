@@ -688,6 +688,35 @@ function livelySystemInformation(data) {
 let spotifyToken = localStorage.getItem('spotify_token') || "";
 let spotifyClientId = localStorage.getItem('spotify_client_id') || "";
 
+async function fetchSpotifyProxy(url, options = {}) {
+  const proxyUrl = "http://127.0.0.1:18888/spotify-proxy";
+  const proxyBody = {
+    url: url,
+    method: options.method || "GET",
+    headers: options.headers || {},
+    body: options.body || null
+  };
+  
+  if (options.body && typeof options.body.toString === 'function' && !(typeof options.body === 'string')) {
+    proxyBody.body = options.body.toString();
+  }
+
+  try {
+    const response = await fetch(proxyUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(proxyBody)
+    });
+    return response;
+  } catch (err) {
+    console.warn("Local Spotify proxy failed or not running, falling back to direct fetch:", err);
+    return fetch(url, options);
+  }
+}
+
+
 function updateSpotifyButtonUI() {
   const btn = document.getElementById("btn-spotify-connect");
   if (!btn) return;
@@ -715,7 +744,7 @@ async function sendSpotifyCommand(endpoint, method = 'POST', body = null) {
     const config = { method, headers };
     if (body) config.body = JSON.stringify(body);
     
-    const res = await fetch(`https://api.spotify.com/v1/me/player/${endpoint}`, config);
+    const res = await fetchSpotifyProxy(`https://api.spotify.com/v1/me/player/${endpoint}`, config);
     
     if (res.status === 401) {
       spotifyToken = "";
@@ -746,7 +775,7 @@ async function toggleSpotifyPlayPause() {
   const svgPause = document.getElementById("svg-pause");
 
   try {
-    const res = await fetch('https://api.spotify.com/v1/me/player', {
+    const res = await fetchSpotifyProxy('https://api.spotify.com/v1/me/player', {
       headers: { 'Authorization': `Bearer ${spotifyToken}` }
     });
     
@@ -866,7 +895,7 @@ async function getValidSpotifyToken() {
         client_id: clientId
       });
       
-      const response = await fetch('https://accounts.spotify.com/api/token', {
+      const response = await fetchSpotifyProxy('https://accounts.spotify.com/api/token', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded'
@@ -907,7 +936,7 @@ async function seekToTime(seconds) {
   const token = await getValidSpotifyToken();
   if (token) {
     try {
-      const res = await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${Math.floor(seconds * 1000)}`, {
+      const res = await fetchSpotifyProxy(`https://api.spotify.com/v1/me/player/seek?position_ms=${Math.floor(seconds * 1000)}`, {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -1026,7 +1055,7 @@ function initSpotifyControls() {
           code_verifier: codeVerifier
         });
         
-        const res = await fetch('https://accounts.spotify.com/api/token', {
+        const res = await fetchSpotifyProxy('https://accounts.spotify.com/api/token', {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: payload
