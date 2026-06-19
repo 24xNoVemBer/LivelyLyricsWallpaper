@@ -29,7 +29,16 @@
         <div class="metadata">
           <div id="title">No music playing</div>
           <div id="artist">Play something on Spotify or your PC</div>
-          <div id="time-display">00:00</div>
+          <div id="time-display" class="hidden">00:00</div>
+          
+          <!-- Progress Bar / Timeline Slider -->
+          <div class="progress-container">
+            <span id="time-current" class="time-label">00:00</span>
+            <div class="progress-bar-wrapper">
+              <input type="range" id="progress-slider" min="0" max="100" value="0" step="0.1" />
+            </div>
+            <span id="time-total" class="time-label">00:00</span>
+          </div>
           
           <!-- Media Control Buttons -->
           <div class="media-controls">
@@ -68,19 +77,19 @@
   <!-- Spotify OAuth Configuration Modal -->
   <div class="spotify-config-modal" id="spotify-config-modal">
     <div class="spotify-config-content">
-      <h2>Kết nối Spotify Control</h2>
-      <p>Do chạy dưới dạng hình nền nên ứng dụng không thể mô phỏng phím tắt hệ thống. Vui lòng kết nối với tài khoản Spotify của bạn qua API:</p>
+      <h2>Kết nối Spotify Control (PKCE)</h2>
+      <p>Do Spotify đã dừng cơ chế cũ, vui lòng kết nối theo cơ chế bảo mật mới (không cần Client Secret):</p>
       <ol>
         <li>Truy cập <a href="https://developer.spotify.com/dashboard" target="_blank" style="color: #1db954; text-decoration: underline;">Spotify Developer Dashboard</a> và tạo một App.</li>
-        <li>Cài đặt App và thêm Redirect URI: <strong><code>http://localhost:8888/</code></strong></li>
-        <li>Copy <strong>Client ID</strong> từ dashboard của Spotify và dán vào bên dưới:</li>
+        <li>Trong cài đặt App, thêm Redirect URI: <strong><code>http://127.0.0.1:8888/</code></strong></li>
+        <li>Sao chép <strong>Client ID</strong> dán vào ô bên dưới:</li>
       </ol>
       
       <label for="spotify-client-id">Client ID</label>
       <input type="text" id="spotify-client-id" class="spotify-input" placeholder="Dán Client ID tại đây..." />
       
-      <label for="spotify-token">Access Token (Hoặc dán toàn bộ URL lỗi sau khi đăng nhập)</label>
-      <input type="text" id="spotify-token" class="spotify-input" placeholder="Nhấn nút Đăng nhập bên dưới, sau đó dán URL lỗi hoặc Token..." />
+      <label for="spotify-token">Đường dẫn chuyển hướng (Redirect URL)</label>
+      <input type="text" id="spotify-token" class="spotify-input" placeholder="Nhấn Đăng nhập, sau đó dán toàn bộ URL lỗi (?code=...) tại đây..." />
 
       <div class="spotify-modal-buttons">
         <button id="btn-modal-cancel" class="spotify-modal-btn cancel">Hủy</button>

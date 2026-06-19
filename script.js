@@ -5,6 +5,8 @@ let scrollInterval = null;
 let timerInterval = null;
 let fetchController = null;
 let currentLineIndex = -1;
+let trackDuration = 0;
+
 
 // WebGL Background Variables
 let scene, camera, renderer, material;
@@ -63,13 +65,32 @@ function formatTime(seconds) {
 function startTimer() {
   if (timerInterval) clearInterval(timerInterval);
   const timeEl = document.getElementById("time-display");
+  const timeCurrentEl = document.getElementById("time-current");
+  const timeTotalEl = document.getElementById("time-total");
+  const progressSlider = document.getElementById("progress-slider");
+  
   if (timeEl) timeEl.textContent = "00:00";
+  if (timeCurrentEl) timeCurrentEl.textContent = "00:00";
+  if (timeTotalEl) timeTotalEl.textContent = "00:00";
+  if (progressSlider) progressSlider.value = 0;
   
   timerInterval = setInterval(() => {
     if (!trackStartTime) return;
     const elapsed = (Date.now() - trackStartTime) / 1000;
-    if (timeEl) timeEl.textContent = formatTime(elapsed);
-  }, 1000);
+    const formattedCurrent = formatTime(elapsed);
+    
+    if (timeEl) timeEl.textContent = formattedCurrent;
+    if (timeCurrentEl) timeCurrentEl.textContent = formattedCurrent;
+    
+    if (timeTotalEl && trackDuration > 0) {
+      timeTotalEl.textContent = formatTime(trackDuration);
+    }
+    
+    if (progressSlider && trackDuration > 0 && !window.isDraggingSlider) {
+      const percentage = Math.min((elapsed / trackDuration) * 100, 100);
+      progressSlider.value = percentage;
+    }
+  }, 250);
 }
 
 // Stop visual timer tick
@@ -79,7 +100,15 @@ function stopTimer() {
     timerInterval = null;
   }
   const timeEl = document.getElementById("time-display");
+  const timeCurrentEl = document.getElementById("time-current");
+  const timeTotalEl = document.getElementById("time-total");
+  const progressSlider = document.getElementById("progress-slider");
+  
   if (timeEl) timeEl.textContent = "00:00";
+  if (timeCurrentEl) timeCurrentEl.textContent = "00:00";
+  if (timeTotalEl) timeTotalEl.textContent = "00:00";
+  if (progressSlider) progressSlider.value = 0;
+  trackDuration = 0;
 }
 
 // Normalize Windows local paths and raw base64 data for Chrome/CEF security policy
@@ -437,6 +466,13 @@ function renderAndSyncLyrics(lyricsText) {
           text: cleanText,
           el: lineEl
         });
+        
+        lineEl.style.cursor = "pointer";
+        lineEl.dataset.time = totalSeconds;
+        lineEl.onclick = function() {
+          const t = parseFloat(this.dataset.time);
+          if (!isNaN(t)) seekToTime(t);
+        };
       }
     } else {
       lyricsLines.push({
@@ -549,6 +585,7 @@ async function fetchLyrics(title, artist) {
     }
 
     const bestMatch = data[0];
+    trackDuration = bestMatch.duration || 0;
     const rawLyrics = bestMatch.syncedLyrics || bestMatch.plainLyrics || "No lyrics found.";
     
     renderAndSyncLyrics(rawLyrics);
@@ -778,6 +815,136 @@ async function sendMediaCommand(action) {
   }
 }
 
+// ==========================================
+// SPOTIFY PKCE AUTHENTICATION & SEEK HELPERS
+// ==========================================
+
+// PKCE Cryptographic Helpers
+function generateRandomString(length) {
+  let text = '';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (let i = 0; i < length; i++) {
+    text += possible.charAt(Math.floor(Math.random() * possible.length));
+  }
+  return text;
+}
+
+async function sha256(plain) {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(plain);
+  return window.crypto.subtle.digest('SHA-256', data);
+}
+
+function base64urlencode(a) {
+  return btoa(String.fromCharCode.apply(null, new Uint8Array(a)))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+}
+
+async function generateCodeChallenge(v) {
+  const hashed = await sha256(v);
+  return base64urlencode(hashed);
+}
+
+// Check and refresh token if expired
+async function getValidSpotifyToken() {
+  let token = localStorage.getItem('spotify_token');
+  const refreshToken = localStorage.getItem('spotify_refresh_token');
+  const expiresAt = localStorage.getItem('spotify_token_expires_at');
+  const clientId = localStorage.getItem('spotify_client_id');
+  
+  if (!token || !refreshToken || !clientId) return "";
+  
+  // If token is expired or expires in less than 60 seconds
+  if (Date.now() > (parseInt(expiresAt) - 60000)) {
+    console.log("Spotify access token expired. Refreshing...");
+    try {
+      const payload = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refreshToken,
+        client_id: clientId
+      });
+      
+      const response = await fetch('https://accounts.spotify.com/api/token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: payload
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        token = data.access_token;
+        localStorage.setItem('spotify_token', token);
+        if (data.refresh_token) {
+          localStorage.setItem('spotify_refresh_token', data.refresh_token);
+        }
+        localStorage.setItem('spotify_token_expires_at', Date.now() + data.expires_in * 1000);
+        console.log("Spotify token refreshed successfully.");
+      } else {
+        console.error("Failed to refresh Spotify token.");
+      }
+    } catch (err) {
+      console.error("Error refreshing Spotify token:", err);
+    }
+  }
+  return token;
+}
+
+// Seek to a specific timestamp
+async function seekToTime(seconds) {
+  // Seek wall-clock immediately for instant lyrics jump
+  trackStartTime = Date.now() - (seconds * 1000);
+  
+  // Update progress bar visually
+  const progressSlider = document.getElementById("progress-slider");
+  if (progressSlider && trackDuration > 0) {
+    progressSlider.value = (seconds / trackDuration) * 100;
+  }
+  
+  const token = await getValidSpotifyToken();
+  if (token) {
+    try {
+      await fetch(`https://api.spotify.com/v1/me/player/seek?position_ms=${Math.floor(seconds * 1000)}`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      console.log(`Seeked Spotify to ${seconds}s`);
+    } catch (e) {
+      console.error("Error seeking Spotify:", e);
+    }
+  } else {
+    console.log(`Seeked local wall-clock to ${seconds}s`);
+  }
+}
+
+// Progress slider drag/change initializer
+window.isDraggingSlider = false;
+function initProgressSlider() {
+  const slider = document.getElementById("progress-slider");
+  if (!slider) return;
+  
+  slider.addEventListener("mousedown", () => { window.isDraggingSlider = true; });
+  slider.addEventListener("touchstart", () => { window.isDraggingSlider = true; });
+  
+  slider.addEventListener("input", (e) => {
+    const percentage = parseFloat(e.target.value);
+    const targetSeconds = (percentage / 100) * trackDuration;
+    const timeCurrentEl = document.getElementById("time-current");
+    if (timeCurrentEl) timeCurrentEl.textContent = formatTime(targetSeconds);
+  });
+  
+  slider.addEventListener("change", (e) => {
+    window.isDraggingSlider = false;
+    const percentage = parseFloat(e.target.value);
+    const targetSeconds = (percentage / 100) * trackDuration;
+    seekToTime(targetSeconds);
+  });
+}
+
+// Initialize controls and listeners
 function initSpotifyControls() {
   const btnConnect = document.getElementById("btn-spotify-connect");
   const btnPrev = document.getElementById("btn-prev");
@@ -790,79 +957,112 @@ function initSpotifyControls() {
   const inputClientId = document.getElementById("spotify-client-id");
   const inputToken = document.getElementById("spotify-token");
 
-  if (btnConnect) {
-    btnConnect.addEventListener("click", openSpotifyConfigModal);
-  }
-  
-  if (btnPrev) {
-    btnPrev.addEventListener("click", () => sendMediaCommand('prev'));
-  }
-  
-  if (btnPlayPause) {
-    btnPlayPause.addEventListener("click", () => sendMediaCommand('playpause'));
-  }
-  
-  if (btnNext) {
-    btnNext.addEventListener("click", () => sendMediaCommand('next'));
-  }
-
-  if (btnCancel) {
-    btnCancel.addEventListener("click", closeSpotifyConfigModal);
-  }
+  if (btnConnect) btnConnect.addEventListener("click", openSpotifyConfigModal);
+  if (btnPrev) btnPrev.addEventListener("click", () => sendMediaCommand('prev'));
+  if (btnPlayPause) btnPlayPause.addEventListener("click", () => sendMediaCommand('playpause'));
+  if (btnNext) btnNext.addEventListener("click", () => sendMediaCommand('next'));
+  if (btnCancel) btnCancel.addEventListener("click", closeSpotifyConfigModal);
 
   if (btnLogin) {
-    btnLogin.addEventListener("click", () => {
+    btnLogin.addEventListener("click", async () => {
       const clientId = inputClientId.value.trim();
       if (!clientId) {
         alert("Vui lòng nhập Client ID trước!");
         return;
       }
-      localStorage.setItem("spotify_client_id", clientId);
+      
+      const codeVerifier = generateRandomString(64);
+      localStorage.setItem('spotify_code_verifier', codeVerifier);
+      localStorage.setItem('spotify_client_id', clientId);
       spotifyClientId = clientId;
       
-      const redirectUri = encodeURIComponent("http://localhost:8888/");
+      const challenge = await generateCodeChallenge(codeVerifier);
+      const redirectUri = encodeURIComponent("http://127.0.0.1:8888/");
       const scope = encodeURIComponent("user-modify-playback-state user-read-playback-state");
-      const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=token&redirect_uri=${redirectUri}&scope=${scope}`;
       
+      const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${redirectUri}&scope=${scope}&code_challenge_method=S256&code_challenge=${challenge}`;
       window.open(authUrl, "spotify-login-popup", "width=500,height=650");
     });
   }
 
   if (btnSave) {
-    btnSave.addEventListener("click", () => {
-      const tokenInputVal = inputToken.value.trim();
-      if (!tokenInputVal) {
-        alert("Vui lòng nhập Token hoặc URL kết quả!");
+    btnSave.addEventListener("click", async () => {
+      const inputVal = inputToken.value.trim();
+      if (!inputVal) {
+        alert("Vui lòng dán URL kết quả hoặc Code chuyển hướng!");
         return;
       }
       
-      let token = tokenInputVal;
-      if (tokenInputVal.includes("access_token=")) {
-        const match = tokenInputVal.match(/access_token=([^&]+)/);
-        if (match) {
-          token = match[1];
+      let code = inputVal;
+      if (inputVal.includes("code=")) {
+        const match = inputVal.match(/code=([^&]+)/);
+        if (match) code = match[1];
+      }
+      
+      const clientId = inputClientId.value.trim() || spotifyClientId;
+      const codeVerifier = localStorage.getItem('spotify_code_verifier');
+      
+      if (!clientId || !codeVerifier) {
+        alert("Thiếu Client ID hoặc Code Verifier. Vui lòng đăng nhập lại bước 1!");
+        return;
+      }
+      
+      try {
+        const payload = new URLSearchParams({
+          client_id: clientId,
+          grant_type: 'authorization_code',
+          code: code,
+          redirect_uri: 'http://127.0.0.1:8888/',
+          code_verifier: codeVerifier
+        });
+        
+        const res = await fetch('https://accounts.spotify.com/api/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: payload
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          spotifyToken = data.access_token;
+          localStorage.setItem("spotify_token", spotifyToken);
+          localStorage.setItem("spotify_refresh_token", data.refresh_token);
+          localStorage.setItem("spotify_token_expires_at", Date.now() + data.expires_in * 1000);
+          localStorage.setItem("spotify_client_id", clientId);
+          spotifyClientId = clientId;
+          
+          updateSpotifyButtonUI();
+          closeSpotifyConfigModal();
+          alert("Kết nối Spotify thành công và giữ liên kết vĩnh viễn!");
+        } else {
+          const errorData = await res.json().catch(() => ({}));
+          console.error("Token Exchange Error:", errorData);
+          alert("Lỗi khi đổi Token: " + (errorData.error_description || "Vui lòng kiểm tra lại Code/URL."));
         }
+      } catch (err) {
+        console.error("Token Exchange Exception:", err);
+        alert("Lỗi mạng khi kết nối Spotify.");
       }
-      
-      localStorage.setItem("spotify_token", token);
-      spotifyToken = token;
-      
-      const clientId = inputClientId.value.trim();
-      if (clientId) {
-        localStorage.setItem("spotify_client_id", clientId);
-        spotifyClientId = clientId;
-      }
-      
-      updateSpotifyButtonUI();
-      closeSpotifyConfigModal();
-      alert("Đã lưu kết nối Spotify thành công!");
     });
   }
-  
+
   if (inputClientId) inputClientId.value = spotifyClientId;
   if (inputToken && spotifyToken) inputToken.value = spotifyToken;
   
   updateSpotifyButtonUI();
+  checkLocalHelper();
+  initProgressSlider();
+}
+
+async function checkLocalHelper() {
+  try {
+    const res = await fetch("http://127.0.0.1:18888/playpause", { method: 'OPTIONS' });
+    if (res.ok) {
+      console.log("Local media helper is running.");
+    }
+  } catch (err) {
+    console.log("Local media helper is not running.");
+  }
 }
 
 function openSpotifyConfigModal() {
@@ -872,7 +1072,7 @@ function openSpotifyConfigModal() {
   const inputClientId = document.getElementById("spotify-client-id");
   const inputToken = document.getElementById("spotify-token");
   if (inputClientId) inputClientId.value = spotifyClientId;
-  if (inputToken) inputToken.value = spotifyToken;
+  if (inputToken) inputToken.value = "";
 }
 
 function closeSpotifyConfigModal() {

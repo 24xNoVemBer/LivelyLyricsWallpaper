@@ -554,7 +554,83 @@ html, body {
   border: none;
 }
 
-.spotify-modal-btn.save:hover {
-  background: #1ed760;
-  box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+}
+
+/* Progress Slider */
+.progress-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin-top: 15px;
+}
+
+.time-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-sub);
+  width: 40px;
+}
+
+#time-current {
+  text-align: right;
+}
+
+#time-total {
+  text-align: left;
+}
+
+.progress-bar-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 20px;
+}
+
+#progress-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  outline: none;
+  cursor: pointer;
+  transition: background 0.3s;
+}
+
+#progress-slider:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+#progress-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--text-main);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+  transition: transform 0.1s ease, background-color 0.2s;
+}
+
+#progress-slider:hover::-webkit-slider-thumb {
+  background: var(--accent-color);
+  transform: scale(1.2);
+}
+
+#progress-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: none;
+  border-radius: 50%;
+  background: var(--text-main);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+  transition: transform 0.1s ease, background-color 0.2s;
+}
+
+#progress-slider:hover::-moz-range-thumb {
+  background: var(--accent-color);
+  transform: scale(1.2);
 }
