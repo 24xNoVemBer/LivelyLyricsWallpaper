@@ -1,0 +1,62 @@
+{
+  "isSquare": {
+    "type": "checkbox",
+    "value": false,
+    "text": "Square Tunnel"
+  },
+  "speed": {
+    "max": 1,
+    "min": 0,
+    "step": 0.01,
+    "text": "Tunnel Rotation Speed",
+    "type": "slider",
+    "value": 0.08
+  },
+  "colorRadius": {
+    "max": 2,
+    "min": 0,
+    "step": 0.01,
+    "text": "Album Backdrop Glow",
+    "help": "Controls dark center overlay intensity",
+    "type": "slider",
+    "value": 0.8
+  },
+  "blurIntensity": {
+    "max": 15,
+    "min": 0,
+    "step": 0.1,
+    "text": "Tunnel Blur",
+    "type": "slider",
+    "value": 0.0
+  },
+  "bgBrightness": {
+    "max": 1,
+    "min": 0,
+    "step": 0.05,
+    "text": "Tunnel Brightness",
+    "type": "slider",
+    "value": 1.0
+  },
+  "parallaxIntensity": {
+    "max": 5,
+    "min": 0,
+    "text": "Parallax Strength",
+    "type": "slider",
+    "value": 1
+  },
+  "displayScaling": {
+    "max": 1,
+    "min": 0.1,
+    "step": 0.01,
+    "text": "WebGL Scaling",
+    "help": "Lower values improve performance",
+    "type": "slider",
+    "value": 1
+  },
+  "fpsLock": {
+    "type": "checkbox",
+    "value": false,
+    "help": "Limit framerate to 30 FPS",
+    "text": "30FPS Lock"
+  }
+}

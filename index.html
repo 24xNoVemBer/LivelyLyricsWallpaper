@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spotify Lyrics Wallpaper</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <!-- Fullscreen blurred background -->
+  <div id="bg"></div>
+  <div class="bg-overlay"></div>
+
+  <!-- Main visual container -->
+  <div class="container">
+    <div class="card" id="player-card">
+      
+      <!-- Track panel containing Cover Art and Metadata (Left Side) -->
+      <div class="track-panel">
+        <div class="cover-wrapper">
+          <div class="ambient-glow" id="ambient-glow"></div>
+          <img id="cover" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="Album Art" />
+          <div class="music-icon-placeholder" id="music-placeholder">
+            <svg viewBox="0 0 24 24" width="64" height="64" fill="currentColor">
+              <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
+            </svg>
+          </div>
+        </div>
+        <div class="metadata">
+          <div id="title">No music playing</div>
+          <div id="artist">Play something on Spotify or your PC</div>
+          <div id="time-display">00:00</div>
+          
+          <!-- Media Control Buttons -->
+          <div class="media-controls">
+            <button id="btn-prev" class="control-btn" title="Previous Track">
+              <svg viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6L18 18V6z"/></svg>
+            </button>
+            <button id="btn-play-pause" class="control-btn" title="Play/Pause">
+              <svg id="svg-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              <svg id="svg-pause" class="hidden" viewBox="0 0 24 24"><path d="M6 19h4V5H6zm8-14v14h4V5z"/></svg>
+            </button>
+            <button id="btn-next" class="control-btn" title="Next Track">
+              <svg viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6zm9-12v12h2V6z"/></svg>
+            </button>
+          </div>
+
+          <!-- Spotify Connect Panel -->
+          <div class="spotify-setup-panel">
+            <button id="btn-spotify-connect" class="spotify-btn">Connect Spotify</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Visual divider line (only visible in widescreen flex layout) -->
+      <div class="divider"></div>
+
+      <!-- Lyrics panel (Right Side) -->
+      <div class="lyrics-panel">
+        <div class="lyrics-container" id="lyrics-container">
+          <div id="lyrics">Waiting for playback details...</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Spotify OAuth Configuration Modal -->
+  <div class="spotify-config-modal" id="spotify-config-modal">
+    <div class="spotify-config-content">
+      <h2>Kết nối Spotify Control</h2>
+      <p>Do chạy dưới dạng hình nền nên ứng dụng không thể mô phỏng phím tắt hệ thống. Vui lòng kết nối với tài khoản Spotify của bạn qua API:</p>
+      <ol>
+        <li>Truy cập <a href="https://developer.spotify.com/dashboard" target="_blank" style="color: #1db954; text-decoration: underline;">Spotify Developer Dashboard</a> và tạo một App.</li>
+        <li>Cài đặt App và thêm Redirect URI: <strong><code>http://localhost:8888/</code></strong></li>
+        <li>Copy <strong>Client ID</strong> từ dashboard của Spotify và dán vào bên dưới:</li>
+      </ol>
+      
+      <label for="spotify-client-id">Client ID</label>
+      <input type="text" id="spotify-client-id" class="spotify-input" placeholder="Dán Client ID tại đây..." />
+      
+      <label for="spotify-token">Access Token (Hoặc dán toàn bộ URL lỗi sau khi đăng nhập)</label>
+      <input type="text" id="spotify-token" class="spotify-input" placeholder="Nhấn nút Đăng nhập bên dưới, sau đó dán URL lỗi hoặc Token..." />
+
+      <div class="spotify-modal-buttons">
+        <button id="btn-modal-cancel" class="spotify-modal-btn cancel">Hủy</button>
+        <button id="btn-modal-login" class="spotify-modal-btn save" style="background-color: #555;">1. Đăng nhập</button>
+        <button id="btn-modal-save" class="spotify-modal-btn save">2. Lưu lại</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="three.min.js"></script>
+  <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,7 @@
+{
+  "Title": "Spotify Lyrics Wallpaper",
+  "Desc": "Shows current music cover and lyrics",
+  "Type": 1,
+  "FileName": "index.html",
+  "Arguments": "--system-nowplaying"
+}
