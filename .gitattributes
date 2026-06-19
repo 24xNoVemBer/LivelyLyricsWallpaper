@@ -1,2 +1,4 @@
-# Treat .lively files as binary files to prevent Git from altering line endings and corrupting the archive
+# Treat .lively and .zip files as binary files to prevent Git from altering line endings and corrupting the archive
 *.lively binary
+*.zip binary
+

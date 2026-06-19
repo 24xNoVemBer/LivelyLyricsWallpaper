@@ -24,7 +24,10 @@ if (Test-Path $outputLively) { Remove-Item $outputLively -Force }
 # Compress files (this places them at the root of the archive)
 Compress-Archive -Path $files -DestinationPath $outputZip -Force
 
-# Rename to .lively
-Rename-Item -Path $outputZip -NewName $outputLively
+# Copy to .lively so both formats (.zip and .lively) are generated
+Copy-Item -Path $outputZip -Destination $outputLively -Force
 
-Write-Host "Package created successfully: $outputLively" -ForegroundColor Green
+Write-Host "Packages created successfully:" -ForegroundColor Green
+Write-Host " - $outputZip" -ForegroundColor Green
+Write-Host " - $outputLively" -ForegroundColor Green
+
