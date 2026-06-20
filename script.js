@@ -754,14 +754,23 @@ async function loadSpotifyConfig() {
       const config = await res.json();
       if (config.spotify_token) {
         spotifyToken = config.spotify_token;
-        spotifyClientId = config.spotify_client_id;
         localStorage.setItem("spotify_token", config.spotify_token);
-        localStorage.setItem("spotify_refresh_token", config.spotify_refresh_token);
-        localStorage.setItem("spotify_token_expires_at", config.spotify_token_expires_at);
-        localStorage.setItem("spotify_client_id", config.spotify_client_id);
-        updateSpotifyButtonUI();
-        return;
       }
+      if (config.spotify_refresh_token) {
+        localStorage.setItem("spotify_refresh_token", config.spotify_refresh_token);
+      }
+      if (config.spotify_token_expires_at) {
+        localStorage.setItem("spotify_token_expires_at", config.spotify_token_expires_at);
+      }
+      if (config.spotify_client_id) {
+        spotifyClientId = config.spotify_client_id;
+        localStorage.setItem("spotify_client_id", config.spotify_client_id);
+      }
+      if (config.spotify_code_verifier) {
+        localStorage.setItem("spotify_code_verifier", config.spotify_code_verifier);
+      }
+      updateSpotifyButtonUI();
+      return;
     }
   } catch (err) {
     console.warn("Could not load Spotify config from local helper:", err);
@@ -775,22 +784,30 @@ async function loadSpotifyConfig() {
 
 // Save Spotify config to local helper and localStorage
 async function saveSpotifyConfig(config) {
-  localStorage.setItem("spotify_token", config.spotify_token);
-  localStorage.setItem("spotify_refresh_token", config.spotify_refresh_token);
-  localStorage.setItem("spotify_token_expires_at", config.spotify_token_expires_at);
-  localStorage.setItem("spotify_client_id", config.spotify_client_id);
+  if (config.spotify_token) localStorage.setItem("spotify_token", config.spotify_token);
+  if (config.spotify_refresh_token) localStorage.setItem("spotify_refresh_token", config.spotify_refresh_token);
+  if (config.spotify_token_expires_at) localStorage.setItem("spotify_token_expires_at", config.spotify_token_expires_at);
+  if (config.spotify_client_id) localStorage.setItem("spotify_client_id", config.spotify_client_id);
+  if (config.spotify_code_verifier) localStorage.setItem("spotify_code_verifier", config.spotify_code_verifier);
   
-  spotifyToken = config.spotify_token;
-  spotifyClientId = config.spotify_client_id;
+  if (config.spotify_token) spotifyToken = config.spotify_token;
+  if (config.spotify_client_id) spotifyClientId = config.spotify_client_id;
   updateSpotifyButtonUI();
 
   try {
+    const res = await fetch("http://127.0.0.1:18888/spotify-config");
+    let currentConfig = {};
+    if (res.ok) {
+      currentConfig = await res.json();
+    }
+    const mergedConfig = { ...currentConfig, ...config };
+
     await fetch("http://127.0.0.1:18888/spotify-config", {
       method: "POST",
       headers: {
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(config)
+      body: JSON.stringify(mergedConfig)
     });
   } catch (err) {
     console.warn("Could not save Spotify config to local helper:", err);
@@ -1192,9 +1209,10 @@ function initSpotifyControls() {
       }
       
       const codeVerifier = generateRandomString(64);
-      localStorage.setItem('spotify_code_verifier', codeVerifier);
-      localStorage.setItem('spotify_client_id', clientId);
-      spotifyClientId = clientId;
+      await saveSpotifyConfig({
+        spotify_code_verifier: codeVerifier,
+        spotify_client_id: clientId
+      });
       
       const challenge = await generateCodeChallenge(codeVerifier);
       const redirectUri = encodeURIComponent("http://127.0.0.1:8888/");
@@ -1212,6 +1230,9 @@ function initSpotifyControls() {
         alert("Vui lòng dán URL kết quả hoặc Code chuyển hướng!");
         return;
       }
+      
+      // Load latest code_verifier from local server config file
+      await loadSpotifyConfig();
       
       let code = inputVal;
       if (inputVal.includes("code=")) {
