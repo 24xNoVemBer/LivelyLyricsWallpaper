@@ -4,8 +4,10 @@ import socketserver
 import json
 import urllib.request
 import urllib.error
+import os
 
 PORT = 18888
+CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "spotify_config.json")
 
 # Windows Virtual Key Codes for Media Controls
 VK_MEDIA_NEXT_TRACK = 0xB0
@@ -48,6 +50,15 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
         elif path == '/prev':
             send_media_key(VK_MEDIA_PREV_TRACK)
             response["action"] = "prev"
+        elif path == '/spotify-config':
+            if os.path.exists(CONFIG_FILE):
+                try:
+                    with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                        response = json.load(f)
+                except Exception as e:
+                    response = {"error": str(e)}
+            else:
+                response = {}
         else:
             response["status"] = "error"
             response["message"] = "Invalid endpoint"
@@ -55,7 +66,27 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(response).encode('utf-8'))
 
     def do_POST(self):
-        if self.path == '/spotify-proxy':
+        if self.path == '/spotify-config':
+            content_length = int(self.headers.get('Content-Length', 0))
+            post_data = self.rfile.read(content_length)
+            try:
+                config_data = json.loads(post_data.decode('utf-8'))
+                with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
+                    json.dump(config_data, f, indent=4)
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "success"}).encode('utf-8'))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+            return
+
+        elif self.path == '/spotify-proxy':
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length)
             
@@ -66,6 +97,13 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
                 target_headers = req_data.get('headers', {})
                 target_body = req_data.get('body', None)
                 
+                # Log request
+                try:
+                    with open("d:\\LivelyLyricsWallpaper\\helper.log", "a", encoding="utf-8") as f:
+                        f.write(f"Request: {target_method} {target_url}\n")
+                except Exception:
+                    pass
+
                 # Setup request
                 req = urllib.request.Request(
                     url=target_url,
@@ -95,6 +133,11 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
                     resp_status = e.code
                     resp_headers = dict(e.headers)
                 except urllib.error.URLError as e:
+                    try:
+                        with open("d:\\LivelyLyricsWallpaper\\helper.log", "a", encoding="utf-8") as f:
+                            f.write(f"URLError: {e.reason}\n")
+                    except:
+                        pass
                     self.send_response(500)
                     self.send_header('Access-Control-Allow-Origin', '*')
                     self.send_header('Content-Type', 'application/json')
@@ -102,6 +145,13 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
                     self.wfile.write(json.dumps({"error": str(e.reason)}).encode('utf-8'))
                     return
                 
+                # Log response status
+                try:
+                    with open("d:\\LivelyLyricsWallpaper\\helper.log", "a", encoding="utf-8") as f:
+                        f.write(f"Response status: {resp_status}\n")
+                except Exception:
+                    pass
+
                 # Return response
                 self.send_response(resp_status)
                 self.send_header('Access-Control-Allow-Origin', '*')

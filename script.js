@@ -746,6 +746,79 @@ async function fetchSpotifyProxy(url, options = {}) {
   }
 }
 
+// Load Spotify config from local helper or localStorage fallback
+async function loadSpotifyConfig() {
+  try {
+    const res = await fetch("http://127.0.0.1:18888/spotify-config");
+    if (res.ok) {
+      const config = await res.json();
+      if (config.spotify_token) {
+        spotifyToken = config.spotify_token;
+        spotifyClientId = config.spotify_client_id;
+        localStorage.setItem("spotify_token", config.spotify_token);
+        localStorage.setItem("spotify_refresh_token", config.spotify_refresh_token);
+        localStorage.setItem("spotify_token_expires_at", config.spotify_token_expires_at);
+        localStorage.setItem("spotify_client_id", config.spotify_client_id);
+        updateSpotifyButtonUI();
+        return;
+      }
+    }
+  } catch (err) {
+    console.warn("Could not load Spotify config from local helper:", err);
+  }
+  
+  // Fallback to localStorage
+  spotifyToken = localStorage.getItem('spotify_token') || "";
+  spotifyClientId = localStorage.getItem('spotify_client_id') || "";
+  updateSpotifyButtonUI();
+}
+
+// Save Spotify config to local helper and localStorage
+async function saveSpotifyConfig(config) {
+  localStorage.setItem("spotify_token", config.spotify_token);
+  localStorage.setItem("spotify_refresh_token", config.spotify_refresh_token);
+  localStorage.setItem("spotify_token_expires_at", config.spotify_token_expires_at);
+  localStorage.setItem("spotify_client_id", config.spotify_client_id);
+  
+  spotifyToken = config.spotify_token;
+  spotifyClientId = config.spotify_client_id;
+  updateSpotifyButtonUI();
+
+  try {
+    await fetch("http://127.0.0.1:18888/spotify-config", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify(config)
+    });
+  } catch (err) {
+    console.warn("Could not save Spotify config to local helper:", err);
+  }
+}
+
+// Clear Spotify config
+async function clearSpotifyConfig() {
+  spotifyToken = "";
+  localStorage.removeItem('spotify_token');
+  localStorage.removeItem('spotify_refresh_token');
+  localStorage.removeItem('spotify_token_expires_at');
+  updateSpotifyButtonUI();
+  stopSpotifySync();
+
+  try {
+    await fetch("http://127.0.0.1:18888/spotify-config", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({})
+    });
+  } catch (err) {
+    console.warn("Could not clear Spotify config from local helper:", err);
+  }
+}
+
 
 function updateSpotifyButtonUI() {
   const btn = document.getElementById("btn-spotify-connect");
@@ -777,10 +850,7 @@ async function sendSpotifyCommand(endpoint, method = 'POST', body = null) {
     const res = await fetchSpotifyProxy(`https://api.spotify.com/v1/me/player/${endpoint}`, config);
     
     if (res.status === 401) {
-      spotifyToken = "";
-      localStorage.removeItem('spotify_token');
-      updateSpotifyButtonUI();
-      stopSpotifySync();
+      await clearSpotifyConfig();
       alert("Spotify connection expired. Please reconnect.");
       openSpotifyConfigModal();
       return;
@@ -811,10 +881,7 @@ async function toggleSpotifyPlayPause() {
     });
     
     if (res.status === 401) {
-      spotifyToken = "";
-      localStorage.removeItem('spotify_token');
-      updateSpotifyButtonUI();
-      stopSpotifySync();
+      await clearSpotifyConfig();
       openSpotifyConfigModal();
       return;
     }
@@ -942,11 +1009,12 @@ async function getValidSpotifyToken() {
       if (response.ok) {
         const data = await response.json();
         token = data.access_token;
-        localStorage.setItem('spotify_token', token);
-        if (data.refresh_token) {
-          localStorage.setItem('spotify_refresh_token', data.refresh_token);
-        }
-        localStorage.setItem('spotify_token_expires_at', Date.now() + data.expires_in * 1000);
+        await saveSpotifyConfig({
+          spotify_token: token,
+          spotify_refresh_token: data.refresh_token || refreshToken,
+          spotify_token_expires_at: Date.now() + data.expires_in * 1000,
+          spotify_client_id: clientId
+        });
         console.log("Spotify token refreshed successfully.");
       } else {
         console.error("Failed to refresh Spotify token.");
@@ -1176,14 +1244,15 @@ function initSpotifyControls() {
         
         if (res.ok) {
           const data = await res.json();
-          spotifyToken = data.access_token;
-          localStorage.setItem("spotify_token", spotifyToken);
-          localStorage.setItem("spotify_refresh_token", data.refresh_token);
-          localStorage.setItem("spotify_token_expires_at", Date.now() + data.expires_in * 1000);
-          localStorage.setItem("spotify_client_id", clientId);
-          spotifyClientId = clientId;
+          const tokenVal = data.access_token;
           
-          updateSpotifyButtonUI();
+          await saveSpotifyConfig({
+            spotify_token: tokenVal,
+            spotify_refresh_token: data.refresh_token,
+            spotify_token_expires_at: Date.now() + data.expires_in * 1000,
+            spotify_client_id: clientId
+          });
+          
           closeSpotifyConfigModal();
           alert("Kết nối Spotify thành công và giữ liên kết vĩnh viễn!");
           startSpotifySync();
@@ -1206,9 +1275,12 @@ function initSpotifyControls() {
   checkLocalHelper();
   initProgressSlider();
   
-  if (spotifyToken) {
-    startSpotifySync();
-  }
+  // Load config asynchronously
+  loadSpotifyConfig().then(() => {
+    if (spotifyToken) {
+      startSpotifySync();
+    }
+  });
 }
 
 async function checkLocalHelper() {
