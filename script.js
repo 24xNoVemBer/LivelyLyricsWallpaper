@@ -6,6 +6,9 @@ let timerInterval = null;
 let fetchController = null;
 let currentLineIndex = -1;
 let trackDuration = 0;
+let isPlaybackPaused = false;
+let pausedElapsed = 0;
+let spotifySyncInterval = null;
 
 
 // WebGL Background Variables
@@ -76,7 +79,7 @@ function startTimer() {
   
   timerInterval = setInterval(() => {
     if (!trackStartTime) return;
-    const elapsed = (Date.now() - trackStartTime) / 1000;
+    const elapsed = isPlaybackPaused ? pausedElapsed : (Date.now() - trackStartTime) / 1000;
     const formattedCurrent = formatTime(elapsed);
     
     if (timeEl) timeEl.textContent = formattedCurrent;
@@ -502,7 +505,7 @@ function renderAndSyncLyrics(lyricsText) {
     scrollInterval = setInterval(() => {
       if (!trackStartTime) return;
       
-      const elapsed = (Date.now() - trackStartTime) / 1000;
+      const elapsed = isPlaybackPaused ? pausedElapsed : (Date.now() - trackStartTime) / 1000;
       
       let activeIndex = -1;
       for (let i = 0; i < lyricsLines.length; i++) {
@@ -654,6 +657,9 @@ function livelyCurrentTrack(data) {
         scrollInterval = null;
       }
       stopTimer();
+      stopSpotifySync();
+      isPlaybackPaused = false;
+      pausedElapsed = 0;
       setText("title", "No music playing");
       setText("artist", "Play something on Spotify or your PC");
       setCover("");
@@ -668,6 +674,8 @@ function livelyCurrentTrack(data) {
     if (key !== currentTrackKey) {
       currentTrackKey = key;
       trackStartTime = Date.now(); // Record playback start time immediately on event receipt
+      isPlaybackPaused = false;
+      pausedElapsed = 0;
       startTimer();
       setPlayPauseIcon(true);
 
@@ -772,6 +780,7 @@ async function sendSpotifyCommand(endpoint, method = 'POST', body = null) {
       spotifyToken = "";
       localStorage.removeItem('spotify_token');
       updateSpotifyButtonUI();
+      stopSpotifySync();
       alert("Spotify connection expired. Please reconnect.");
       openSpotifyConfigModal();
       return;
@@ -805,6 +814,7 @@ async function toggleSpotifyPlayPause() {
       spotifyToken = "";
       localStorage.removeItem('spotify_token');
       updateSpotifyButtonUI();
+      stopSpotifySync();
       openSpotifyConfigModal();
       return;
     }
@@ -813,24 +823,21 @@ async function toggleSpotifyPlayPause() {
       const state = await res.json();
       if (state.is_playing) {
         await sendSpotifyCommand('pause', 'PUT');
-        if (svgPlay && svgPause) {
-          svgPlay.classList.remove("hidden");
-          svgPause.classList.add("hidden");
-        }
+        isPlaybackPaused = true;
+        pausedElapsed = (Date.now() - trackStartTime) / 1000;
+        setPlayPauseIcon(false);
       } else {
         await sendSpotifyCommand('play', 'PUT');
-        if (svgPlay && svgPause) {
-          svgPlay.classList.add("hidden");
-          svgPause.classList.remove("hidden");
-        }
+        isPlaybackPaused = false;
+        trackStartTime = Date.now() - (pausedElapsed * 1000);
+        setPlayPauseIcon(true);
       }
     } else {
       // Active device exists but no track or paused, let's try play
       await sendSpotifyCommand('play', 'PUT');
-      if (svgPlay && svgPause) {
-        svgPlay.classList.add("hidden");
-        svgPause.classList.remove("hidden");
-      }
+      isPlaybackPaused = false;
+      trackStartTime = Date.now() - (pausedElapsed * 1000);
+      setPlayPauseIcon(true);
     }
   } catch (err) {
     console.error("Error toggling Spotify play/pause:", err);
@@ -844,12 +851,16 @@ async function sendMediaCommand(action) {
     if (res.ok) {
       console.log(`Media Helper command ${action} succeeded`);
       if (action === 'playpause') {
-        const svgPlay = document.getElementById("svg-play");
-        const svgPause = document.getElementById("svg-pause");
-        if (svgPlay && svgPause) {
-          svgPlay.classList.toggle("hidden");
-          svgPause.classList.toggle("hidden");
+        isPlaybackPaused = !isPlaybackPaused;
+        if (isPlaybackPaused) {
+          pausedElapsed = (Date.now() - trackStartTime) / 1000;
+        } else {
+          trackStartTime = Date.now() - (pausedElapsed * 1000);
         }
+        setPlayPauseIcon(!isPlaybackPaused);
+        setTimeout(syncSpotifyPlaybackState, 800);
+      } else if (action === 'next' || action === 'prev') {
+        setTimeout(syncSpotifyPlaybackState, 800);
       }
       return;
     }
@@ -859,10 +870,13 @@ async function sendMediaCommand(action) {
 
   if (action === 'playpause') {
     await toggleSpotifyPlayPause();
+    setTimeout(syncSpotifyPlaybackState, 800);
   } else if (action === 'next') {
     await sendSpotifyCommand('next', 'POST');
+    setTimeout(syncSpotifyPlaybackState, 800);
   } else if (action === 'prev') {
     await sendSpotifyCommand('previous', 'POST');
+    setTimeout(syncSpotifyPlaybackState, 800);
   }
 }
 
@@ -944,10 +958,68 @@ async function getValidSpotifyToken() {
   return token;
 }
 
+// Sync Spotify playback state (progress and play/pause status)
+async function syncSpotifyPlaybackState() {
+  const token = await getValidSpotifyToken();
+  if (!token) return;
+  
+  try {
+    const res = await fetchSpotifyProxy('https://api.spotify.com/v1/me/player', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    
+    if (res.status === 200) {
+      const state = await res.json();
+      if (state && state.item) {
+        const spotifyProgressSec = state.progress_ms / 1000;
+        const spotifyIsPlaying = state.is_playing;
+        
+        // Update duration if Spotify has it
+        if (state.item.duration_ms) {
+          trackDuration = state.item.duration_ms / 1000;
+        }
+        
+        // Set play/pause icon and states
+        setPlayPauseIcon(spotifyIsPlaying);
+        
+        if (spotifyIsPlaying) {
+          isPlaybackPaused = false;
+          // Sync trackStartTime if discrepancy is > 1.5 seconds
+          const localElapsed = (Date.now() - trackStartTime) / 1000;
+          if (Math.abs(localElapsed - spotifyProgressSec) > 1.5 || window.isDraggingSlider) {
+            trackStartTime = Date.now() - state.progress_ms;
+          }
+        } else {
+          isPlaybackPaused = true;
+          pausedElapsed = spotifyProgressSec;
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error syncing Spotify playback state:", err);
+  }
+}
+
+function startSpotifySync() {
+  if (spotifySyncInterval) clearInterval(spotifySyncInterval);
+  // Sync immediately
+  syncSpotifyPlaybackState();
+  // Poll every 3 seconds
+  spotifySyncInterval = setInterval(syncSpotifyPlaybackState, 3000);
+}
+
+function stopSpotifySync() {
+  if (spotifySyncInterval) {
+    clearInterval(spotifySyncInterval);
+    spotifySyncInterval = null;
+  }
+}
+
 // Seek to a specific timestamp
 async function seekToTime(seconds) {
   // Seek wall-clock immediately for instant lyrics jump
   trackStartTime = Date.now() - (seconds * 1000);
+  pausedElapsed = seconds; // Update paused elapsed in case we are paused
   
   // Update progress bar visually
   const progressSlider = document.getElementById("progress-slider");
@@ -1114,6 +1186,7 @@ function initSpotifyControls() {
           updateSpotifyButtonUI();
           closeSpotifyConfigModal();
           alert("Kết nối Spotify thành công và giữ liên kết vĩnh viễn!");
+          startSpotifySync();
         } else {
           const errorData = await res.json().catch(() => ({}));
           console.error("Token Exchange Error:", errorData);
@@ -1132,6 +1205,10 @@ function initSpotifyControls() {
   updateSpotifyButtonUI();
   checkLocalHelper();
   initProgressSlider();
+  
+  if (spotifyToken) {
+    startSpotifySync();
+  }
 }
 
 async function checkLocalHelper() {
