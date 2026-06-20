@@ -20,12 +20,20 @@ def send_media_key(code):
     # Release key
     ctypes.windll.user32.keybd_event(code, 0, 2, 0)
 
+def log_to_file(msg):
+    try:
+        with open("d:\\LivelyLyricsWallpaper\\helper.log", "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+    except:
+        pass
+
 class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         # Suppress logging to keep console clean
         return
 
     def do_OPTIONS(self):
+        log_to_file(f"OPTIONS {self.path}")
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
@@ -33,6 +41,7 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
+        log_to_file(f"GET {self.path}")
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Content-type', 'application/json')
@@ -57,6 +66,7 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
                         response = json.load(f)
                 except Exception as e:
                     response = {"error": str(e)}
+                    log_to_file(f"GET /spotify-config error: {e}")
             else:
                 response = {}
         else:
@@ -66,6 +76,7 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
         self.wfile.write(json.dumps(response).encode('utf-8'))
 
     def do_POST(self):
+        log_to_file(f"POST {self.path}")
         if self.path == '/spotify-config':
             content_length = int(self.headers.get('Content-Length', 0))
             post_data = self.rfile.read(content_length)

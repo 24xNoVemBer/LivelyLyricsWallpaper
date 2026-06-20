@@ -930,6 +930,24 @@ async function toggleSpotifyPlayPause() {
 }
 
 async function sendMediaCommand(action) {
+  // If we have a Spotify token, prefer Spotify Web API for reliability
+  if (spotifyToken) {
+    if (action === 'playpause') {
+      await toggleSpotifyPlayPause();
+      setTimeout(syncSpotifyPlaybackState, 500);
+      return;
+    } else if (action === 'next') {
+      await sendSpotifyCommand('next', 'POST');
+      setTimeout(syncSpotifyPlaybackState, 500);
+      return;
+    } else if (action === 'prev') {
+      await sendSpotifyCommand('previous', 'POST');
+      setTimeout(syncSpotifyPlaybackState, 500);
+      return;
+    }
+  }
+  
+  // Fallback: use local media key helper
   try {
     const res = await fetch(`http://127.0.0.1:18888/${action}`, { mode: 'cors' });
     if (res.ok) {
@@ -942,25 +960,11 @@ async function sendMediaCommand(action) {
           trackStartTime = Date.now() - (pausedElapsed * 1000);
         }
         setPlayPauseIcon(!isPlaybackPaused);
-        setTimeout(syncSpotifyPlaybackState, 800);
-      } else if (action === 'next' || action === 'prev') {
-        setTimeout(syncSpotifyPlaybackState, 800);
       }
       return;
     }
   } catch (err) {
-    console.log("Local media helper not running, falling back to Spotify Web API...");
-  }
-
-  if (action === 'playpause') {
-    await toggleSpotifyPlayPause();
-    setTimeout(syncSpotifyPlaybackState, 800);
-  } else if (action === 'next') {
-    await sendSpotifyCommand('next', 'POST');
-    setTimeout(syncSpotifyPlaybackState, 800);
-  } else if (action === 'prev') {
-    await sendSpotifyCommand('previous', 'POST');
-    setTimeout(syncSpotifyPlaybackState, 800);
+    console.log("Local media helper not running.");
   }
 }
 
@@ -1044,59 +1048,86 @@ async function getValidSpotifyToken() {
 }
 
 // Sync Spotify playback state (progress and play/pause status)
+let isSyncing = false;
 async function syncSpotifyPlaybackState() {
-  const token = await getValidSpotifyToken();
-  if (!token) return;
+  if (isSyncing) return; // Prevent concurrent calls
+  isSyncing = true;
   
   try {
+    const token = await getValidSpotifyToken();
+    if (!token) { isSyncing = false; return; }
+    
     const res = await fetchSpotifyProxy('https://api.spotify.com/v1/me/player', {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     
     if (res.status === 200) {
       const state = await res.json();
-      if (state && state.item) {
-        const spotifyProgressSec = state.progress_ms / 1000;
+      
+      if (state && typeof state.is_playing !== 'undefined') {
         const spotifyIsPlaying = state.is_playing;
+        const spotifyProgressSec = (state.progress_ms || 0) / 1000;
         
-        // Update duration if Spotify has it
-        if (state.item.duration_ms) {
+        // Update duration from Spotify if available
+        if (state.item && state.item.duration_ms) {
           trackDuration = state.item.duration_ms / 1000;
         }
         
-        // Set play/pause icon and states
+        // Log state transitions for debugging
+        if (spotifyIsPlaying !== !isPlaybackPaused) {
+          console.log(`Spotify sync: is_playing=${spotifyIsPlaying}, local paused=${isPlaybackPaused}, progress=${spotifyProgressSec.toFixed(1)}s`);
+        }
+        
+        // Update play/pause icon
         setPlayPauseIcon(spotifyIsPlaying);
         
         if (spotifyIsPlaying) {
           isPlaybackPaused = false;
-          // Sync trackStartTime if discrepancy is > 1.5 seconds
-          const localElapsed = (Date.now() - trackStartTime) / 1000;
-          if (Math.abs(localElapsed - spotifyProgressSec) > 1.5 || window.isDraggingSlider) {
-            trackStartTime = Date.now() - state.progress_ms;
+          // Sync trackStartTime if discrepancy is > 2 seconds
+          if (trackStartTime) {
+            const localElapsed = (Date.now() - trackStartTime) / 1000;
+            if (Math.abs(localElapsed - spotifyProgressSec) > 2) {
+              trackStartTime = Date.now() - (spotifyProgressSec * 1000);
+              console.log(`Spotify sync: corrected time drift, now at ${spotifyProgressSec.toFixed(1)}s`);
+            }
+          } else {
+            trackStartTime = Date.now() - (spotifyProgressSec * 1000);
           }
         } else {
+          // Spotify is paused
           isPlaybackPaused = true;
           pausedElapsed = spotifyProgressSec;
         }
       }
+    } else if (res.status === 204) {
+      // No active device / no content
+      console.log("Spotify sync: no active device (204)");
+    } else if (res.status === 401) {
+      // Token expired
+      await clearSpotifyConfig();
+      stopSpotifySync();
     }
   } catch (err) {
     console.error("Error syncing Spotify playback state:", err);
+  } finally {
+    isSyncing = false;
   }
 }
 
 function startSpotifySync() {
-  if (spotifySyncInterval) clearInterval(spotifySyncInterval);
+  stopSpotifySync(); // Always clean up first
   // Sync immediately
   syncSpotifyPlaybackState();
   // Poll every 3 seconds
   spotifySyncInterval = setInterval(syncSpotifyPlaybackState, 3000);
+  console.log("Spotify sync started (every 3s)");
 }
 
 function stopSpotifySync() {
   if (spotifySyncInterval) {
     clearInterval(spotifySyncInterval);
     spotifySyncInterval = null;
+    console.log("Spotify sync stopped");
   }
 }
 
