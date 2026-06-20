@@ -930,19 +930,28 @@ async function toggleSpotifyPlayPause() {
 }
 
 async function sendMediaCommand(action) {
-  // If we have a Spotify token, prefer Spotify Web API for reliability
   if (spotifyToken) {
     if (action === 'playpause') {
-      await toggleSpotifyPlayPause();
-      setTimeout(syncSpotifyPlaybackState, 500);
+      // Instant UI update based on local state
+      if (isPlaybackPaused) {
+        // Currently paused → resume
+        isPlaybackPaused = false;
+        trackStartTime = Date.now() - (pausedElapsed * 1000);
+        setPlayPauseIcon(true);
+        sendSpotifyCommand('play', 'PUT').then(() => setTimeout(syncSpotifyPlaybackState, 500));
+      } else {
+        // Currently playing → pause
+        isPlaybackPaused = true;
+        pausedElapsed = trackStartTime ? (Date.now() - trackStartTime) / 1000 : 0;
+        setPlayPauseIcon(false);
+        sendSpotifyCommand('pause', 'PUT').then(() => setTimeout(syncSpotifyPlaybackState, 500));
+      }
       return;
     } else if (action === 'next') {
-      await sendSpotifyCommand('next', 'POST');
-      setTimeout(syncSpotifyPlaybackState, 500);
+      sendSpotifyCommand('next', 'POST').then(() => setTimeout(syncSpotifyPlaybackState, 800));
       return;
     } else if (action === 'prev') {
-      await sendSpotifyCommand('previous', 'POST');
-      setTimeout(syncSpotifyPlaybackState, 500);
+      sendSpotifyCommand('previous', 'POST').then(() => setTimeout(syncSpotifyPlaybackState, 800));
       return;
     }
   }
