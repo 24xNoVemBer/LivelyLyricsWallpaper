@@ -1,0 +1,13 @@
+# Local IDE and test state
+.idea/
+__pycache__/
+*.py[cod]
+
+# Runtime state and credentials
+*.log
+spotify_config.json
+*.tmp
+
+# Build scratch files and ad-hoc archives
+.build/
+SpotifyWallPaperByHan.zip

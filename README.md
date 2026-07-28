@@ -89,6 +89,16 @@ Hình nền Lively hiển thị lời bài hát (Lyrics) đồng bộ thời gia
    - Dán URL vừa sao chép vào ô **Redirect URL** ở bảng cấu hình.
    - Nhấp chọn **2. Save** (Lưu lại) để hoàn thành kết nối.
 
+## Lyrics sync behavior / C?ch ??ng b? lyrics
+
+- Timestamped LRC is synchronized exactly against the authoritative playback clock.
+- Plain lyrics are marked `? Unsynced lyrics` and auto-scroll using an estimated timeline.
+- Spotify playback is authoritative only when the Spotify item matches the title, artist and duration reported by Lively. Spotify state will not pause or seek an unrelated YouTube/VLC track.
+- For accurate Spotify position, start `run_helper.vbs` and connect Spotify. Other media players remain best-effort because Lively NowPlaying provides metadata but not playback position.
+- Spotify credentials stay inside the helper and are encrypted for the current Windows user with DPAPI. They are not included in wallpaper packages.
+
+After updating `media_helper.py`, close the old Python helper process and run `run_helper.vbs` again so the new endpoints are active.
+
 ---
 
 ## 🛠️ Development & Packaging / Đóng gói hình nền
@@ -101,4 +111,4 @@ Nếu bạn chỉnh sửa file nguồn và muốn đóng gói lại phiên bản
    ```powershell
    ./pack.ps1
    ```
-3. A new `SpotifyLyricsWallpaper.zip` (and `.lively` / `.rar`) will be generated. You can attach these files to your releases or share them directly!
+3. Validated `SpotifyLyricsWallpaper.zip` and `SpotifyLyricsWallpaper.lively` files will be generated with identical payloads and a printed SHA256 checksum.

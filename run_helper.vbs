@@ -1,2 +1,4 @@
+Set Fso = CreateObject("Scripting.FileSystemObject")
 Set WshShell = CreateObject("WScript.Shell")
-WshShell.Run "python ""d:\LivelyLyricsWallpaper\media_helper.py""", 0, False
+ScriptDir = Fso.GetParentFolderName(WScript.ScriptFullName)
+WshShell.Run "pythonw """ & Fso.BuildPath(ScriptDir, "media_helper.py") & """", 0, False
