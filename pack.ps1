@@ -8,6 +8,8 @@ $sourceFiles = @(
     "lyrics-core.js",
     "script.js",
     "media_helper.py",
+    "lyrics_import.html",
+    "lyrics_import.js",
     "run_helper.vbs",
     "three.min.js",
     "LivelyInfo.json",

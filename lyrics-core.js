@@ -15,6 +15,7 @@
       .replace(/[\u0300-\u036f]/g, "")
       .replace(/[’‘`]/g, "'")
       .toLowerCase()
+      .replace(/đ/g, "d")
       .replace(/\s+/g, " ")
       .trim();
   }
@@ -127,11 +128,21 @@
 
   function selectBestCandidate(candidates, inputTrack) {
     if (!Array.isArray(candidates) || candidates.length === 0) return null;
+    const track = normalizeTrack(inputTrack);
     const ranked = candidates
-      .map((candidate, index) => ({
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(({ candidate }) => {
+        if (!candidate || !candidate.trackName) return false;
+        if (!candidate.syncedLyrics && !candidate.plainLyrics && !candidate.instrumental) return false;
+        if (track.artist && candidate.artistName && artistOverlap(candidate.artistName, track.artist) === 0) {
+          return false;
+        }
+        return true;
+      })
+      .map(({ candidate, index }) => ({
         candidate,
         index,
-        score: scoreCandidate(candidate, inputTrack),
+        score: scoreCandidate(candidate, track),
       }))
       .sort((a, b) => b.score - a.score || a.index - b.index);
 

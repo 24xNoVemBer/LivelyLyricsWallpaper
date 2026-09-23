@@ -89,15 +89,30 @@ Hình nền Lively hiển thị lời bài hát (Lyrics) đồng bộ thời gia
    - Dán URL vừa sao chép vào ô **Redirect URL** ở bảng cấu hình.
    - Nhấp chọn **2. Save** (Lưu lại) để hoàn thành kết nối.
 
-## Lyrics sync behavior / C?ch ??ng b? lyrics
+## Lyrics sync behavior / Cách đồng bộ lyrics
 
 - Timestamped LRC is synchronized exactly against the authoritative playback clock.
-- Plain lyrics are marked `? Unsynced lyrics` and auto-scroll using an estimated timeline.
+- Plain lyrics are marked `≈ Unsynced lyrics` and auto-scroll using an estimated timeline.
 - Spotify playback is authoritative only when the Spotify item matches the title, artist and duration reported by Lively. Spotify state will not pause or seek an unrelated YouTube/VLC track.
 - For accurate Spotify position, start `run_helper.vbs` and connect Spotify. Other media players remain best-effort because Lively NowPlaying provides metadata but not playback position.
+- If a non-Spotify player restarts the same song without changing its metadata, Lively cannot report the new playback position. Use **Restart lyrics timeline** in Lively's **Customise** panel to restart the approximate clock.
 - Spotify credentials stay inside the helper and are encrypted for the current Windows user with DPAPI. They are not included in wallpaper packages.
 
 After updating `media_helper.py`, close the old Python helper process and run `run_helper.vbs` again so the new endpoints are active.
+
+### Import your own LRC/TXT lyrics
+
+1. Start `run_helper.vbs`, then open [the local lyrics importer](http://127.0.0.1:18888/lyrics-import) in your normal browser.
+2. Enter the title and artist exactly as shown by the wallpaper, or use **Get current Spotify track** and check the values. Select a UTF-8 `.lrc` or `.txt` file (up to 48 KB). For `.txt`, entering the song duration helps approximate scrolling.
+3. Save, then click **Reload lyrics** on the wallpaper or in Lively **Customise**. Local files take priority over LRCLIB and are stored in the helper's per-user data directory, not in the wallpaper package. The importer also lets you delete an incorrect entry.
+
+Only timestamped `.lrc` can synchronize precisely. Plain `.txt` lyrics, including plain-only LRCLIB results, have an estimated timeline. If LRCLIB has no result for a song, the app cannot invent its lyrics; import a file you are entitled to use.
+
+### Explorer and wallpaper input compatibility
+
+On one tested Windows 11 / Lively 2.2.1.5 setup, File Explorer windows stayed hidden while Lively's **Wallpaper Input** was enabled. With TranslucentTB not running and after restarting Lively, **Wallpaper Input → Mouse** (`InputForward=1`) allowed both Explorer and wallpaper buttons to work. This A/B result narrows the conflict to the Lively/desktop-input environment but does not prove which app caused it. If the problem returns, temporarily set **Lively → Settings → Wallpaper → Interaction → Wallpaper Input → Off** (`InputForward=0`) to recover Explorer; wallpaper buttons will then stop receiving clicks.
+
+With Wallpaper Input off, open the wallpaper's **Customise** panel in Lively to use **Play / Pause**, **Previous**, **Next**, **Reload lyrics**, and **Restart lyrics timeline**. Playback commands require `run_helper.vbs` or a connected Spotify helper. For an existing install, Lively may keep an older per-display copy of `LivelyProperties.json`; **Restore Default** in Customise refreshes the controls but also resets your previous wallpaper appearance settings. The local lyrics importer remains usable in a normal browser. Spotify's on-wallpaper login form needs Wallpaper Input enabled.
 
 ---
 

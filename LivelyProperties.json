@@ -1,4 +1,29 @@
 {
+  "controlPlayPause": {
+    "type": "button",
+    "value": "Play / Pause",
+    "text": "Play / Pause (when wallpaper input is off)"
+  },
+  "controlPrevious": {
+    "type": "button",
+    "value": "Previous",
+    "text": "Previous track"
+  },
+  "controlNext": {
+    "type": "button",
+    "value": "Next",
+    "text": "Next track"
+  },
+  "controlReloadLyrics": {
+    "type": "button",
+    "value": "Reload lyrics",
+    "text": "Retry lyrics search"
+  },
+  "controlResyncTimeline": {
+    "type": "button",
+    "value": "Restart lyrics timeline",
+    "text": "Use when the same song restarts outside Spotify"
+  },
   "isSquare": {
     "type": "checkbox",
     "value": false,

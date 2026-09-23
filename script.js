@@ -16,6 +16,7 @@ let spotifySyncActive = false;
 let spotifyNextPollMs = 5000;
 let spotifyFailureCount = 0;
 let lyricsRequestSequence = 0;
+let propertyCommandsReady = false;
 let playbackClock = {
   positionAtSync: 0,
   syncedAt: performance.now(),
@@ -455,6 +456,25 @@ document.addEventListener("mousemove", (event) => {
 
 // Lively property listener hook for customize UI
 function livelyPropertyListener(name, val) {
+  if (propertyCommandsReady) {
+    switch (name) {
+      case "controlPlayPause":
+        sendMediaCommand("playpause");
+        return;
+      case "controlPrevious":
+        sendMediaCommand("prev");
+        return;
+      case "controlNext":
+        sendMediaCommand("next");
+        return;
+      case "controlReloadLyrics":
+        reloadLyrics();
+        return;
+      case "controlResyncTimeline":
+        resyncLyricsTimeline();
+        return;
+    }
+  }
   if (!material) return;
   switch (name) {
     case "speed":
@@ -522,7 +542,7 @@ function renderAndSyncLyrics(lyricsText, options = {}) {
       retry.id = "btn-inline-reload";
       retry.className = "spotify-btn";
       retry.style.cssText = "font-size:13px;padding:8px 18px;margin-top:5px;";
-      retry.textContent = "Th? l?i";
+      retry.textContent = "Thử lại";
       retry.addEventListener("click", reloadLyrics);
       wrapper.appendChild(retry);
     }
@@ -541,7 +561,7 @@ function renderAndSyncLyrics(lyricsText, options = {}) {
   let isEstimated = false;
 
   if (!parsed.synced) {
-    const estimatedDuration = Number(options.duration || trackDuration || lyricsCandidateDuration || 0);
+    const estimatedDuration = Number(trackDuration || options.duration || lyricsCandidateDuration || 0);
     timeline = LyricsCore.buildEstimatedLines(lyricsText, estimatedDuration);
     isEstimated = timeline.length > 0;
   }
@@ -556,9 +576,9 @@ function renderAndSyncLyrics(lyricsText, options = {}) {
     return;
   }
 
-  if (parsed.synced) setLyricsStatus("Synced lyrics");
-  else if (isEstimated) setLyricsStatus("? Unsynced lyrics");
-  else setLyricsStatus("Unsynced lyrics");
+  if (parsed.synced) setLyricsStatus(options.source === "local" ? "Local synced lyrics" : "Synced lyrics");
+  else if (isEstimated) setLyricsStatus(options.source === "local" ? "≈ Local plain lyrics" : "≈ Unsynced lyrics");
+  else setLyricsStatus(options.source === "local" ? "Local plain lyrics" : "Unsynced lyrics");
 
   for (const line of displayLines) {
     const lineEl = document.createElement("div");
@@ -673,22 +693,70 @@ async function fetchLyrics(trackInput, artistFallback = "") {
   };
 
   try {
+    const localParams = new URLSearchParams({ title: track.title, artist: track.artist });
+    const localController = new AbortController();
+    const abortLocal = () => localController.abort();
+    controller.signal.addEventListener("abort", abortLocal, { once: true });
+    const localTimeout = setTimeout(() => localController.abort(), 1200);
+    try {
+      const localResponse = await fetch(`http://127.0.0.1:18888/lyrics?${localParams.toString()}`, {
+        signal: localController.signal
+      });
+      if (localResponse.ok) {
+        const localResult = await localResponse.json();
+        if (!isCurrentRequest()) return;
+        if (localResult.lyrics) {
+          lyricsCandidateDuration = Number(localResult.duration || 0);
+          renderAndSyncLyrics(localResult.lyrics, { duration: lyricsCandidateDuration, source: "local" });
+          return;
+        }
+      }
+    } catch (localError) {
+      if (controller.signal.aborted) throw localError;
+      // The helper is optional; LRCLIB remains available when it is offline.
+    } finally {
+      clearTimeout(localTimeout);
+      controller.signal.removeEventListener("abort", abortLocal);
+    }
+
     const params = new URLSearchParams({ track_name: track.title });
     if (track.artist) params.set("artist_name", track.artist);
     if (track.album) params.set("album_name", track.album);
-    const targetUrl = `https://lrclib.net/api/search?${params.toString()}`;
+    const searchLyrics = async (query) => {
+      const url = `https://lrclib.net/api/search?${query.toString()}`;
+      try {
+        return await fetchAttempt(url, 4500);
+      } catch (directError) {
+        if (controller.signal.aborted) throw directError;
+        return await fetchAttempt(`https://corsproxy.io/?url=${encodeURIComponent(url)}`, 8500);
+      }
+    };
 
-    let data;
-    try {
-      data = await fetchAttempt(targetUrl, 4500);
-    } catch (directError) {
-      if (controller.signal.aborted) throw directError;
-      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`;
-      data = await fetchAttempt(proxyUrl, 8500);
+    let data = await searchLyrics(params);
+    if (!isCurrentRequest()) return;
+    let ranked = LyricsCore.selectBestCandidate(data, {
+      ...track,
+      duration: trackDuration || track.duration
+    });
+
+    if (!ranked && (track.artist || track.album)) {
+      const titleOnly = new URLSearchParams({ track_name: track.title });
+      try {
+        const broadResults = await searchLyrics(titleOnly);
+        if (!isCurrentRequest()) return;
+        ranked = LyricsCore.selectBestCandidate(broadResults, {
+          ...track,
+          duration: trackDuration || track.duration
+        });
+        if (Array.isArray(broadResults) && broadResults.length > 0) data = broadResults;
+      } catch (broadError) {
+        if (controller.signal.aborted) throw broadError;
+        console.warn("Title-only lyrics search failed:", broadError);
+      }
     }
 
     if (!isCurrentRequest()) return;
-    if (!Array.isArray(data) || data.length === 0) {
+    if (!ranked && (!Array.isArray(data) || data.length === 0)) {
       renderAndSyncLyrics(null, {
         status: "Lyrics not found",
         message: "No lyrics found for this track."
@@ -696,10 +764,6 @@ async function fetchLyrics(trackInput, artistFallback = "") {
       return;
     }
 
-    const ranked = LyricsCore.selectBestCandidate(data, {
-      ...track,
-      duration: trackDuration || track.duration
-    });
     if (!ranked) {
       renderAndSyncLyrics(null, {
         status: "No reliable match",
@@ -710,9 +774,6 @@ async function fetchLyrics(trackInput, artistFallback = "") {
 
     const bestMatch = ranked.candidate;
     lyricsCandidateDuration = Number(bestMatch.duration || 0);
-    if (trackDuration <= 0 && lyricsCandidateDuration > 0) {
-      trackDuration = lyricsCandidateDuration;
-    }
 
     if (bestMatch.instrumental && !bestMatch.syncedLyrics && !bestMatch.plainLyrics) {
       renderAndSyncLyrics(null, {
@@ -1123,6 +1184,23 @@ function reloadLyrics() {
   fetchLyrics(currentTrackMeta);
 }
 
+function resyncLyricsTimeline() {
+  if (!currentTrackMeta) return;
+  if (spotifyConnected && spotifyTrackMatched) {
+    syncSpotifyPlaybackState();
+    return;
+  }
+  setPlaybackPosition(0, true, "lively");
+  currentLineIndex = -1;
+  for (const line of lyricsLines) {
+    if (line.el) line.el.classList.remove("active");
+  }
+  const containerEl = document.getElementById("lyrics-container");
+  if (containerEl) containerEl.scrollTop = 0;
+  startTimer();
+  setPlayPauseIcon(true);
+}
+
 
 // Progress slider drag/change initializer
 window.isDraggingSlider = false;
@@ -1151,6 +1229,7 @@ function initProgressSlider() {
 // Initialize controls and listeners
 function initSpotifyControls() {
   const buttonConnect = document.getElementById("btn-spotify-connect");
+  const buttonImportLyrics = document.getElementById("btn-import-lyrics");
   const buttonPrevious = document.getElementById("btn-prev");
   const buttonPlayPause = document.getElementById("btn-play-pause");
   const buttonNext = document.getElementById("btn-next");
@@ -1162,6 +1241,9 @@ function initSpotifyControls() {
   const inputRedirect = document.getElementById("spotify-token");
 
   if (buttonConnect) buttonConnect.addEventListener("click", openSpotifyConfigModal);
+  if (buttonImportLyrics) buttonImportLyrics.addEventListener("click", () => {
+    window.open("http://127.0.0.1:18888/lyrics-import", "_blank");
+  });
   if (buttonPrevious) buttonPrevious.addEventListener("click", () => sendMediaCommand("prev"));
   if (buttonPlayPause) buttonPlayPause.addEventListener("click", () => sendMediaCommand("playpause"));
   if (buttonNext) buttonNext.addEventListener("click", () => sendMediaCommand("next"));
@@ -1276,3 +1358,6 @@ function closeSpotifyConfigModal() {
 }
 
 window.addEventListener("DOMContentLoaded", initSpotifyControls);
+window.addEventListener("load", () => {
+  setTimeout(() => { propertyCommandsReady = true; }, 1500);
+});

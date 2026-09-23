@@ -40,6 +40,34 @@ test("prefers the correct synced candidate instead of blindly taking index zero"
   assert.ok(result.score > 80);
 });
 
+test("rejects a same-title lyric result credited to another artist", () => {
+  const track = { title: "Hello", artist: "Adele" };
+  const candidates = [
+    { trackName: "Hello", artistName: "Lionel Richie", syncedLyrics: "[00:01.00]Wrong song" },
+    { trackName: "Hello", artistName: "Adele", syncedLyrics: "[00:01.00]Right song" },
+  ];
+
+  const result = core.selectBestCandidate(candidates, track);
+  assert.equal(result.index, 1);
+  assert.equal(core.selectBestCandidate(candidates.slice(0, 1), track), null);
+});
+
+test("matches Vietnamese artist names with or without diacritics", () => {
+  const result = core.selectBestCandidate([
+    { trackName: "Trốn Tìm", artistName: "Den Vau", syncedLyrics: "[00:01.00]Line" },
+  ], { title: "Trốn Tìm", artist: "Đen Vâu" });
+  assert.equal(result.index, 0);
+});
+
+test("skips a metadata-only result when a lyric-bearing version exists", () => {
+  const track = { title: "Example", artist: "Artist", album: "Album" };
+  const result = core.selectBestCandidate([
+    { trackName: "Example", artistName: "Artist", albumName: "Album" },
+    { trackName: "Example", artistName: "Artist", plainLyrics: "Actual lyrics" },
+  ], track);
+  assert.equal(result.index, 1);
+});
+
 test("parses offsets, comma decimals and multiple timestamps", () => {
   const parsed = core.parseLrc([
     "[ar:Artist]",

@@ -1,13 +1,16 @@
 import base64
 import ctypes
 from ctypes import wintypes
+import hashlib
 import http.server
 import json
 import logging
 from logging.handlers import RotatingFileHandler
 import os
 import re
+import tempfile
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -17,6 +20,9 @@ APP_NAME = "LivelyLyricsWallpaper"
 DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.dirname(os.path.abspath(__file__))), APP_NAME)
 CONFIG_FILE = os.path.join(DATA_DIR, "spotify_config.json")
 LOG_FILE = os.path.join(DATA_DIR, "helper.log")
+LYRICS_DIR = os.path.join(DATA_DIR, "lyrics")
+IMPORT_PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lyrics_import.html")
+IMPORT_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "lyrics_import.js")
 LEGACY_CONFIG_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "spotify_config.json")
 MAX_BODY_BYTES = 64 * 1024
 SECRET_FIELDS = {"spotify_token", "spotify_refresh_token", "spotify_code_verifier"}
@@ -50,6 +56,89 @@ def is_allowed_origin(origin):
         parsed.scheme in {"http", "https"}
         and (hostname in {"localhost", "127.0.0.1", "::1"} or hostname.endswith(".localhost"))
     )
+
+
+def is_allowed_lyrics_write_origin(origin):
+    return not origin or origin in {"http://127.0.0.1:18888", "http://localhost:18888"}
+
+
+def is_allowed_lyrics_read_origin(origin):
+    return not origin or (origin != "null" and not origin.startswith("file://") and is_allowed_origin(origin))
+
+
+def normalize_lyrics_identity(value):
+    decomposed = unicodedata.normalize("NFKD", str(value or "").casefold())
+    without_marks = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return re.sub(r"\s+", " ", without_marks.replace("đ", "d")).strip()
+
+
+def lyrics_path(title, artist):
+    identity = normalize_lyrics_identity(title) + "\0" + normalize_lyrics_identity(artist)
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()
+    return os.path.join(LYRICS_DIR, digest + ".json")
+
+
+def save_local_lyrics(title, artist, lyrics, duration=0):
+    title = str(title or "").strip()
+    artist = str(artist or "").strip()
+    lyrics = str(lyrics or "").strip()
+    if not title or not artist or len(title) > 200 or len(artist) > 200:
+        raise ValueError("invalid_track")
+    if not lyrics or len(lyrics.encode("utf-8")) > 48 * 1024:
+        raise ValueError("invalid_lyrics")
+    try:
+        duration = float(duration or 0)
+    except (TypeError, ValueError) as error:
+        raise ValueError("invalid_duration") from error
+    if not 0 <= duration <= 24 * 60 * 60:
+        raise ValueError("invalid_duration")
+
+    record = {"title": title, "artist": artist, "lyrics": lyrics, "duration": duration}
+    os.makedirs(LYRICS_DIR, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=LYRICS_DIR, suffix=".tmp", delete=False) as handle:
+            temporary = handle.name
+            json.dump(record, handle, ensure_ascii=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, lyrics_path(title, artist))
+    finally:
+        if temporary and os.path.exists(temporary):
+            os.unlink(temporary)
+    return record
+
+
+def load_local_lyrics(title, artist):
+    path = lyrics_path(title, artist)
+    if not os.path.isfile(path):
+        return None
+    with open(path, "r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def list_local_lyrics():
+    if not os.path.isdir(LYRICS_DIR):
+        return []
+    records = []
+    for name in os.listdir(LYRICS_DIR):
+        if not name.endswith(".json"):
+            continue
+        try:
+            with open(os.path.join(LYRICS_DIR, name), "r", encoding="utf-8") as handle:
+                record = json.load(handle)
+            records.append({"title": record["title"], "artist": record["artist"], "duration": record.get("duration", 0)})
+        except (OSError, ValueError, KeyError):
+            logger.warning("local_lyrics_list_skipped file=%s", name)
+    return sorted(records, key=lambda record: (normalize_lyrics_identity(record["title"]), normalize_lyrics_identity(record["artist"])))
+
+
+def delete_local_lyrics(title, artist):
+    path = lyrics_path(title, artist)
+    if not os.path.isfile(path):
+        return False
+    os.unlink(path)
+    return True
 
 
 os.makedirs(DATA_DIR, exist_ok=True)
@@ -251,7 +340,7 @@ def exchange_spotify_code(code):
 
 
 class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
-    server_version = "LivelyLyricsHelper/1.2"
+    server_version = "LivelyLyricsHelper/1.3"
 
     def log_message(self, format_string, *args):
         return
@@ -293,7 +382,10 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
         length = int(self.headers.get("Content-Length", "0") or 0)
         if length <= 0 or length > MAX_BODY_BYTES:
             raise ValueError("invalid_content_length")
-        return json.loads(self.rfile.read(length).decode("utf-8"))
+        payload = json.loads(self.rfile.read(length).decode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("invalid_json_object")
+        return payload
 
     def do_OPTIONS(self):
         if not self._origin_allowed():
@@ -307,7 +399,47 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
             return
 
         if self.path == "/health":
-            self._send_json(200, {"status": "ok", "version": "1.2"})
+            self._send_json(200, {"status": "ok", "version": "1.3"})
+            return
+
+        parsed_path = urllib.parse.urlsplit(self.path)
+        if parsed_path.path in {"/lyrics", "/lyrics-list"} and not is_allowed_lyrics_read_origin(self.headers.get("Origin")):
+            self._send_json(403, {"error": "origin_not_allowed"})
+            return
+        if parsed_path.path in {"/lyrics-import", "/lyrics-import.js"} and not parsed_path.query:
+            asset_path = IMPORT_PAGE if parsed_path.path == "/lyrics-import" else IMPORT_SCRIPT
+            content_type = "text/html; charset=utf-8" if parsed_path.path == "/lyrics-import" else "text/javascript; charset=utf-8"
+            try:
+                with open(asset_path, "rb") as handle:
+                    page = handle.read()
+            except OSError:
+                self._send_json(503, {"error": "import_page_unavailable"})
+                return
+            self._send_headers(200, content_type=content_type, extra={
+                "Content-Length": len(page),
+                "X-Content-Type-Options": "nosniff",
+                "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; base-uri 'none'; object-src 'none'",
+            })
+            self.wfile.write(page)
+            return
+
+        if parsed_path.path == "/lyrics":
+            query = urllib.parse.parse_qs(parsed_path.query)
+            title = query.get("title", [""])[0]
+            artist = query.get("artist", [""])[0]
+            if not title or not artist or len(title) > 200 or len(artist) > 200:
+                self._send_json(400, {"error": "invalid_track"})
+                return
+            try:
+                record = load_local_lyrics(title, artist)
+            except (OSError, ValueError):
+                self._send_json(500, {"error": "lyrics_read_failed"})
+                return
+            self._send_json(200 if record else 404, record or {"error": "lyrics_not_found"})
+            return
+
+        if self.path == "/lyrics-list":
+            self._send_json(200, {"items": list_local_lyrics()})
             return
 
         if self.path == "/spotify-status":
@@ -336,10 +468,40 @@ class MediaKeyHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(403, {"error": "origin_not_allowed"})
             return
 
+        if self.path in {"/lyrics-import", "/lyrics-delete"}:
+            if not is_allowed_lyrics_write_origin(self.headers.get("Origin")):
+                self._send_json(403, {"error": "origin_not_allowed"})
+                return
+            if self.headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json":
+                self._send_json(415, {"error": "json_required"})
+                return
+
         try:
             payload = self._read_json()
         except (ValueError, json.JSONDecodeError):
             self._send_json(400, {"error": "invalid_json"})
+            return
+
+        if self.path == "/lyrics-import":
+            try:
+                record = save_local_lyrics(
+                    payload.get("title"), payload.get("artist"), payload.get("lyrics"), payload.get("duration", 0)
+                )
+            except ValueError as error:
+                self._send_json(400, {"error": str(error)})
+                return
+            logger.info("local_lyrics_import title=%s artist=%s", record["title"], record["artist"])
+            self._send_json(200, {"status": "ok", "title": record["title"], "artist": record["artist"]})
+            return
+
+        if self.path == "/lyrics-delete":
+            title = str(payload.get("title", "")).strip()
+            artist = str(payload.get("artist", "")).strip()
+            if not title or not artist:
+                self._send_json(400, {"error": "invalid_track"})
+                return
+            deleted = delete_local_lyrics(title, artist)
+            self._send_json(200, {"deleted": deleted})
             return
 
         if self.path == "/media-command":
